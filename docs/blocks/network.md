@@ -1,40 +1,36 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 网络策略
 
+<div class="feature-summary">
+
+## 介绍
+
 网络策略组件控制编辑器的运行时出网行为。默认 `open`：图片等媒体按原地址加载，**老系统的 http 图床开箱即可显示**。需要内网 / 公文 / 隐私场景时显式切到 `allowlist` 或 `offline`，`offline` 下外链图片降级为占位块并保留原地址。策略在粘贴、`setContent()`、图片渲染三个接线点统一生效。
 
-## 代码演示 {#demo}
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="network" />
 
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `network.mode` | 出网策略。非法值回退默认值 `open`。 | `'open' \| 'allowlist' \| 'offline'` | open / allowlist / offline | `'open'` |
+| `network.allowlist` | 放行的 host；自动去除协议、路径并转小写，支持子域名。 | `string[]` | — | `[]` |
+| `network.imageProxy` | 外链图片转存钩子；返回本地地址后编辑器自动替换原外链。 | `(url) => Promise<string>` | — | — |
+
 示例通过 JSON 传入图片地址，交给编辑器应用离线策略。外链原址仍保留在文档数据中。
 
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  // 默认可省略；显式写成下面这样等价于默认行为
-  network: { mode: 'open' },
-
-  // 只放行内网图床
-  // network: { mode: 'allowlist', allowlist: ['20.200.174.87', 'oss.internal.example'] },
-
-  // 完全离线
-  // network: { mode: 'offline' },
-})
-```
-
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `network.mode` | `'open' \| 'allowlist' \| 'offline'` | `'open'` | 出网策略。非法值回退默认值 `open`。 |
-| `network.allowlist` | `string[]` | `[]` | 放行的 host；自动去除协议、路径并转小写，支持子域名。 |
-| `network.imageProxy` | `(url) => Promise<string>` | - | 外链图片转存钩子；返回本地地址后编辑器自动替换原外链。 |
 
 ### 三种模式
 

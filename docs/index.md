@@ -1,6 +1,6 @@
 # LarkDoc 开发文档
 
-从左侧选择功能，在当前页按步骤试用，再复制完整 HTML。站点示例使用 `lark-doc@0.14.10`。
+从左侧选择功能，在同一页试用编辑器、复制 Vue 3 代码和查参数。功能页示例使用 `lark-doc@0.14.12`。
 
 第一次接入可以先跑一个最小工程。[快速开始](/guide/getting-started) · [选择接入环境](/examples/)
 
@@ -10,7 +10,7 @@
 | --- | --- |
 | 给文字加格式 | [标题](/blocks/heading#demo)、[加粗与斜体](/blocks/marks#demo) |
 | 在正文里组织内容 | [表格](/blocks/table#demo)、[列表](/blocks/lists#demo)、[分栏](/blocks/columns#demo) |
-| 加入图片和公式 | [图片](/blocks/image#demo)、[图片上传](/blocks/uploader#demo)、[数学公式](/blocks/math#demo) |
+| 加入图片和公式 | [图片](/blocks/image#demo)、[图片上传](/blocks/uploader#demo)、[数学公式](/blocks/math#demo)、[视频](/blocks/video#demo) |
 | 接入应用能力 | [评论](/blocks/comment#demo)、[协同与权限](/guide/collaboration#demo)、[导入导出](/blocks/import-export#demo) |
 
 ::: warning 项目声明

@@ -1,14 +1,33 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 标题
 
+<div class="feature-summary">
+
+## 介绍
+
 标题组件覆盖文档标题与正文章节标题。正文标题支持 H1–H9 九个层级（H7–H9 渲染为带 `data-level` 的 `div`，导出 HTML 时 H1–H6 落到语义化标签）。
 
-## 代码演示 {#demo}
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="heading" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `title` | 文档标题，长度受 `limits.titleLength`（默认 120）约束。 | `string` | — | `'未命名文档'` |
+| `features.headings` | 关闭后工具栏与块菜单的标题入口隐藏。 | `boolean` | true / false | `true` |
+| `toolbarKeys` 含 `headings` | 工具栏裁剪，别名 `heading` / `title` / `paragraph` 等价。 | `string[]` | — | 全部展示 |
+| `limits.titleLength` | 标题最大长度。 | `number` | — | `120` |
 
 要区分两套结构：
 
@@ -21,19 +40,9 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 标题还能挂**编号**（飞书的「标题编号」= 给标题挂有序列表编号），编号是块级 UI、不在正文文本里，详见[标题编号](#标题编号)。
 
-## 基本用法
+## 配置与用法
 
-```ts
-new LarkDoc({
-  element: '#editor',
-  title: '未命名文档',          // 文档标题
-  features: { headings: true }, // 关闭后标题菜单不可用
-  toolbarKeys: ['headings'],    // 工具栏保留标题分组
-  content: '<h2>二级标题</h2><p>正文…</p>',
-})
-```
-
-## 使用方式
+### 使用方式
 
 | 入口 | 操作 |
 | --- | --- |
@@ -41,15 +50,6 @@ new LarkDoc({
 | 斜杠命令 | 输入 `/` 后选择标题层级。 |
 | 块句柄菜单 | 「转为正文 / 转为一级 / 二级 / 三级标题」。 |
 | 快捷键 | `Mod+Alt+1..3`（详见快捷键面板）。 |
-
-## 配置参考
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `title` | `string` | `'未命名文档'` | 文档标题，长度受 `limits.titleLength`（默认 120）约束。 |
-| `features.headings` | `boolean` | `true` | 关闭后工具栏与块菜单的标题入口隐藏。 |
-| `toolbarKeys` 含 `headings` | `string[]` | 全部展示 | 工具栏裁剪，别名 `heading` / `title` / `paragraph` 等价。 |
-| `limits.titleLength` | `number` | `120` | 标题最大长度。 |
 
 ### 数据契约
 
@@ -59,9 +59,6 @@ new LarkDoc({
 - 缩进缩的是**整块盒子**：导出 HTML 用 `margin-left`（不是 `padding-left`），块宽同步变窄，和飞书一致；悬停高亮与句柄位置都跟着块盒子走。
 - 0–5 是硬上限，到顶后工具栏 / 气泡 / 块菜单 / 快捷键全部停住，导入的老数据会被压回 5。
 - `blockId` 是块的稳定标识（所有块级节点都有），折叠状态、后续评论锚点 / 协同定位都按它引用块；详见[折叠块 · 块标识](/blocks/folding#块标识-blockid)。
-
-<details>
-<summary>高级：标题编号与数据契约</summary>
 
 ## 标题编号
 
@@ -104,5 +101,3 @@ new LarkDoc({
 - 只读态点编号不弹菜单；`features.headings` 关闭后同样不响应。
 - 编号是纯视图装饰：进入 `getHTML()` 的只有属性，不影响正文内容、光标与撤销粒度。
 - 折叠箭头与编号落在同一个行内位置，渲染顺序是飞书的「▾ 2. 标题」。
-
-</details>

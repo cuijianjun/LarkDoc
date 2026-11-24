@@ -1,25 +1,31 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 表情
 
+<div class="feature-summary">
+
+## 介绍
+
 表情组件提供分类标签、搜索过滤与最近使用记录，插入的是内联 atom 节点（`span[data-type="emoji"]`）。内置 11 个基础表情，按「常用 / 提示」等分类组织；数据为内置字符表，离线可用。
 
-## 代码演示 {#demo}
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="emoji" />
 
-## 配置示例
+## API
 
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { emoji: true },
-  toolbarKeys: ['insert'],       // 表情入口在插入分组（别名 emoji）
-  content: '<p><span data-type="emoji" data-name="tada"></span> 发布成功</p>',
-})
-```
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.emoji` | 关闭后插入菜单中的表情入口隐藏。 | `boolean` | true / false | `true` |
+| `commands.disabled: ['setEmoji']` | 按命令禁用表情插入。 | `string[]` | — | `[]` |
 
 ## 配置与用法
 
@@ -33,11 +39,6 @@ new LarkDoc({
 | `fire` | 🔥 | `star` | 🌟 | | |
 
 分类：常用（smile / heart / thumbsup / tada）、提示（pin / warning / check / comment / target / fire / star）。
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.emoji` | `boolean` | `true` | 关闭后插入菜单中的表情入口隐藏。 |
-| `commands.disabled: ['setEmoji']` | `string[]` | `[]` | 按命令禁用表情插入。 |
 
 ### 使用方式
 

@@ -1,14 +1,34 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 导入导出
 
-电脑端紧凑顶栏中，从「⋯ → 导入」选择格式，再选择本地文件。确认后会替换当前正文，可以撤销。导入和导出可以独立开关，Word 解析按需加载。
+<div class="feature-summary">
 
-## 代码演示 {#demo}
+## 介绍
+
+顶部「导入」「导出」两个入口，**各自能单独关、格式能逐项配**。转换全在本地完成，DOCX 依赖按需动态加载，不进首包。
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="import-export" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.importExport` | 一起开关导入、导出入口 | `boolean` | true / false | true |
+| `importExport.importEnabled` | 显示导入入口 | `boolean` | true / false | true |
+| `importExport.exportEnabled` | 显示导出入口 | `boolean` | true / false | true |
+| `importExport.importFormats` | 可导入的格式和排列顺序 | `string[]` | html / json / md / docx | 全部 |
+| `importExport.exportFormats` | 可导出的格式和排列顺序 | `string[]` | html / json / md / txt / docx / print | 全部 |
 
 ## 配置
 
@@ -40,8 +60,8 @@ new LarkDoc({
 | --- | --- | --- | --- |
 | `html` | `.html` `.htm` | ✅ | 媒体写法由 `media.htmlMode` 决定，见[图片](/blocks/image) |
 | `json` | `.json` | ✅ | **唯一无损往返**格式，要来回编辑就用它 |
-| `md` | `.md` `.markdown` `.mark` `.txt` | ✅ | 四种扩展名均按 Markdown 解析 |
-| `docx` | `.doc` `.docx` | ✅ | 旧版 Word 97–2003（`.doc`）导入正文文字。保留更多格式和媒体时，请先另存为 `.docx` |
+| `md` | `.md` `.markdown` | ✅ | 导出是简化版，表格 / 分栏 / 高亮块退化成顺序文本 |
+| `docx` | `.docx` | ✅ | 导出是纯文本段落，面向归档不还原排版 |
 | `txt` | — | ✅ | 只有正文文字 |
 | `print` | — | ✅ | 调浏览器打印，可存成 PDF；打印前自动展开折叠块 |
 

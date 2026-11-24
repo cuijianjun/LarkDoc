@@ -1,14 +1,34 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 代码块
 
+<div class="feature-summary">
+
+## 介绍
+
 代码块组件提供语言选择、语法高亮（highlight.js 按需动态加载，本地 chunk 无外网请求）、行内复制与编辑态切换。可通过 `config.performance.syntaxHighlight` 关闭语法高亮。
 
-## 代码演示 {#demo}
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="code-block" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.codeBlocks` | 关闭后代码块入口与命令不可用。 | `boolean` | true / false | `true` |
+| `features.diagram` | 关闭后语言下拉不再提供 Mermaid 图表，预览按钮与渲染器加载一并禁用；已有 mermaid 代码块退化为纯源码展示。 | `boolean` | true / false | `true` |
+| `config.performance.diagramScriptUrl` | 显式给出自托管 mermaid UMD 地址时，改为运行时加载该脚本。默认 `null` 使用包内按需区块，内网无需另配地址。 | `string \| null` | — | `null` |
+| `config.performance.syntaxHighlight` | 关闭后不做语法高亮。 | `boolean` | true / false | `true` |
+| `config.blockMenu.disabled: ['codeBlock']` | 禁用块菜单「转为代码块」。 | `string[]` | — | `[]` |
 
 语言选为 **Mermaid 图表** 时，代码块升级为图表块：**默认直接渲染图表**（与 Vditor 行为一致），点「编辑源码」可切回源码编辑。渲染器（mermaid，打包进产物、不请求外网）是 `import()` 懒 chunk，只在首次渲染时按需加载。
 
@@ -16,41 +36,7 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 工具栏、插入「＋」和斜杠菜单使用同一套六类型选择，每种类型都有独立图标。鼠标移入图表按钮可展开菜单，进入菜单后保持展开，离开后稍延迟收起。键入 `/图表` 后按 Enter，也会先展开类型选择。
 
-## 基本用法
-
-完整入口 `lark-doc` 会在首次显示代码块或 Mermaid 图表时按需加载，无需额外注册特性包。
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { codeBlocks: true, diagram: true },
-  config: { performance: { syntaxHighlight: true } }, // false 时纯文本渲染
-  toolbarKeys: ['insert'],                 // 图表入口在插入分组（斜杠命令 / 加号菜单搜「图表」）
-  content: '<pre><code class="language-js">console.log("hi")</code></pre>',
-})
-```
-
-## 使用方式
-
-| 入口 | 操作 |
-| --- | --- |
-| 斜杠命令 / 插入菜单 | 新建代码块；输入「图表」或 `mermaid` 后，展开图表子菜单，选择类型即可插入对应示例源码。 |
-| 工具栏「图表」按钮 | 下拉选择图表类型（流程图 / 时序图 / 甘特图 / 饼图 / 状态图 / 类图），插入对应示例源码的图表块。 |
-| 块句柄菜单 | 「转为代码块」，正文与代码块互转。 |
-| 语言选择 | 代码块右上角切换语言，高亮随之更新；选 Mermaid 立即进入图表渲染。 |
-| 块缩进 | 块句柄菜单「增加缩进 / 减少缩进」或 `⌘]` / `⌘[` 让**整个代码框**右移（不是框内文本），每级 25px；能缩多深由前一个块决定，减少缩进可以一路回到 0——与飞书一致。`Tab` 在代码块内仍是插入两个空格。 |
-| Markdown 输入 | 行首输入 ``` + 语言名回车转换。 |
-| 图表预览 | mermaid 块**默认渲染图表**且为独立白底卡片外观；块工具栏「编辑源码 / 预览图表」随时切换，渲染失败时自动显示源码便于修正。 |
-
-## 配置参考
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.codeBlocks` | `boolean` | `true` | 关闭后代码块入口与命令不可用。 |
-| `features.diagram` | `boolean` | `true` | 关闭后语言下拉不再提供 Mermaid 图表，预览按钮与渲染器加载一并禁用；已有 mermaid 代码块退化为纯源码展示。 |
-| `config.performance.diagramScriptUrl` | `string \| null` | `null` | 显式给出自托管 mermaid UMD 地址时，改为运行时加载该脚本。默认 `null` 使用包内按需区块，内网无需另配地址。 |
-| `config.performance.syntaxHighlight` | `boolean` | `true` | 关闭后不做语法高亮。 |
-| `config.blockMenu.disabled: ['codeBlock']` | `string[]` | `[]` | 禁用块菜单「转为代码块」。 |
+## 配置与用法
 
 ### 数据契约
 
@@ -74,6 +60,18 @@ new LarkDoc({
 **减少缩进不受此限**：只受 0 下限约束，可以一路减回文档开头。
 
 `limits.maxIndent` 只能把上限**调低**（例如宿主只允许 3 级），设成 99 也还是 5。
+
+### 使用方式
+
+| 入口 | 操作 |
+| --- | --- |
+| 斜杠命令 / 插入菜单 | 新建代码块；输入「图表」或 `mermaid` 后，展开图表子菜单，选择类型即可插入对应示例源码。 |
+| 工具栏「图表」按钮 | 下拉选择图表类型（流程图 / 时序图 / 甘特图 / 饼图 / 状态图 / 类图），插入对应示例源码的图表块。 |
+| 块句柄菜单 | 「转为代码块」，正文与代码块互转。 |
+| 语言选择 | 代码块右上角切换语言，高亮随之更新；选 Mermaid 立即进入图表渲染。 |
+| 块缩进 | 块句柄菜单「增加缩进 / 减少缩进」或 `⌘]` / `⌘[` 让**整个代码框**右移（不是框内文本），每级 25px；能缩多深由前一个块决定，减少缩进可以一路回到 0——与飞书一致。`Tab` 在代码块内仍是插入两个空格。 |
+| Markdown 输入 | 行首输入 ``` + 语言名回车转换。 |
+| 图表预览 | mermaid 块**默认渲染图表**且为独立白底卡片外观；块工具栏「编辑源码 / 预览图表」随时切换，渲染失败时自动显示源码便于修正。 |
 
 ### 图表渲染
 

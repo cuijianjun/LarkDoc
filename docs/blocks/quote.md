@@ -1,31 +1,33 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 引用
 
+<div class="feature-summary">
+
+## 介绍
+
 引用组件渲染块级引文（`<blockquote>`），常用于摘录、风险提示。与[高亮块](/blocks/callout)的区别：引用是纯排版语义，不带图标与底色。
 
-## 代码演示 {#demo}
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="quote" />
 
-## 配置示例
+## API
 
-```ts
-new LarkDoc({
-  element: '#editor',
-  toolbarKeys: ['insert'],      // 引用入口在插入分组（别名 blockquote）
-  content: '<blockquote><p>清晰的表达，让复杂的事变得简单。</p></blockquote>',
-})
-```
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.insert` | 插入菜单总开关。 | `boolean` | true / false | `true` |
+| `blockMenu.disabled: ['blockquote']` | 禁用块菜单「转为引用」。 | `string[]` | — | `[]` |
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.insert` | `boolean` | `true` | 插入菜单总开关。 |
-| `blockMenu.disabled: ['blockquote']` | `string[]` | `[]` | 禁用块菜单「转为引用」。 |
 
 ### 使用方式
 

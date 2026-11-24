@@ -1,5 +1,6 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitepress'
-import { featureGroups } from '../examples/feature-demos.js'
+import { demoModes, demoSource, examplesFor, featureDemos, featureGroups } from '../examples/feature-demos.js'
 
 // 部署路径可注入：
 //   GitHub Pages 项目页 → 默认 '/LarkDoc/'（cuijianjun.github.io/LarkDoc/）
@@ -34,11 +35,69 @@ const featureSidebar = [
   })),
 ]
 
+const runnerId = 'virtual:larkdoc-feature-loaders'
+const previewPrefix = 'virtual:larkdoc-feature/'
+const previewFile = (name: string) => fileURLToPath(new URL(`../examples/_feature-${name}.vue`, import.meta.url))
+const scenarios = Object.values(featureDemos).flatMap(demo =>
+  examplesFor(demo).flatMap(example =>
+    Object.keys(demoModes).map(mode => ({
+      id: `${demo.id}--${example.example}--${mode}`, example, mode,
+    })),
+  ),
+)
+const previews = Object.fromEntries(scenarios.map(({ id, example, mode }) => [
+  previewFile(id), demoSource(example, mode, true),
+]))
+
 export default defineConfig({
   base: BASE,
   lang: 'zh-CN',
   title: 'lark-doc',
   description: 'LarkDoc 编辑器 · 安装、配置与 API 调用指南',
+  vite: {
+    plugins: [{
+      name: 'larkdoc-feature-examples',
+      enforce: 'pre',
+      resolveId(id) {
+        if (id === runnerId) return '\0' + id
+        if (id.startsWith(previewPrefix)) {
+          const name = id.slice(previewPrefix.length)
+          const file = previewFile(name)
+          if (Object.hasOwn(previews, file)) return file
+        }
+      },
+      load(id) {
+        if (id === '\0' + runnerId) {
+          const entries = scenarios.map(({ id }) =>
+            `${JSON.stringify(id)}: () => import(${JSON.stringify(previewPrefix + id)})`)
+          return `export const loaders = { ${entries.join(', ')} }`
+        }
+        return previews[id]
+      },
+    }],
+  },
+  transformHtml(html, _id, { page }) {
+    // The runner selects a single mode and scenario from the URL after hydration.
+    if (page === 'examples/feature-runner.md') {
+      return html.replace(/<link rel="modulepreload" href="[^"]+">/g, '')
+    }
+  },
+  markdown: {
+    codeCopyButtonTitle: '复制代码',
+    config(md) {
+      md.core.ruler.before('normalize', 'larkdoc-feature-source', state => {
+        state.src = state.src.replace(/^<FeatureDemo name="([a-z-]+)" \/>$/gm, (_, name) => {
+          if (!Object.hasOwn(featureDemos, name)) throw new Error(`未知的功能演示 ${name}`)
+          const slots = examplesFor(featureDemos[name]).flatMap(example =>
+            Object.keys(demoModes).map(mode =>
+              `<template #${example.example}-${mode}>\n\n~~~~vue\n${demoSource(example, mode).trimEnd()}\n~~~~\n\n</template>`,
+            ),
+          )
+          return `<FeatureDemo name="${name}">\n\n${slots.join('\n\n')}\n\n</FeatureDemo>`
+        })
+      })
+    },
+  },
   // head 里是裸 HTML，不会自动套 base，必须手动拼 BASE。
   head: [['link', { rel: 'icon', type: 'image/svg+xml', href: BASE + 'logo.svg' }]],
 
@@ -63,6 +122,7 @@ export default defineConfig({
             { text: '常用配置', link: '/guide/configuration' },
             { text: '实例与事件', link: '/guide/instance' },
             { text: '全量与按需加载', link: '/guide/build-artifacts' },
+            { text: '大文件导出与渲染优化', link: '/guide/large-documents' },
             { text: 'View 层与 Provider', link: '/guide/view-integration' },
             { text: '协同服务端契约', link: '/guide/collab-server' },
             { text: 'Vditor 数据导入', link: '/guide/vditor-import' },

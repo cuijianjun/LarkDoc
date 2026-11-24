@@ -1,39 +1,37 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 模板
 
-模板有三条独立流程：
+<div class="feature-summary">
 
-## 代码演示 {#demo}
+## 介绍
+
+用模板快速填充内容。可以在当前光标位置插入，也可以在工作台确认后替换整篇正文。
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="templates" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.templates` | 关闭后模板选择入口隐藏。 | `boolean` | true / false | `true` |
+| `templates` | 未传或非数组时，编辑器使用 `INSERT_TEMPLATES`，工作台整文替换仍使用 `TEMPLATES`。空数组表示空模板集，初始内容回退为空段落。 | `TemplateItem[]` | — | 按入口区分 |
 
 - 编辑器 `/` 或 `＋` →「模板」在当前选区插入正文，不改文档标题；「更多模板」打开同页模板库，可搜索、只读预览并插入。
 - 工作台顶部模板选择器在确认后替换整篇正文并更新标题，继续使用原 `TEMPLATES` 示例集。
 - 独立的云盘模板库默认只回调 `onPreview` / `onUse`，由宿主预览或复制新文档；不会自动写入编辑器。
 
-## 基本用法
-
-原生模板库从 `lark-doc/templates` 引入 `createTemplateLibrary`（同名兼容导出 `LarkDocTemplateLibrary`），提供搜索、分类、预览与使用回调，不依赖 Vue。它与下方工作台的 `templates` prop 是两个独立入口；默认主入口不导出 Vue2 模板组件。
-
-```js
-import { createTemplateLibrary } from 'lark-doc/templates'
-import 'lark-doc/style.css'
-
-const library = createTemplateLibrary({
-  host: document.body,
-  handlers: {
-    onUse: template => console.log('由宿主创建文档', template),
-    onPreview: template => console.log('预览模板', template),
-    onClose: () => library.close(),
-  },
-})
-library.update({ templates: [] }) // 传入宿主模板集
-library.open()
-// 页面卸载时：library.destroy()
-```
+## Vue 2 工作台与独立模板库
 
 下面的示例用于已有 Vue2 应用。工作台兼容组件从 `lark-doc/vue2` 引入，由宿主 Vue2 注册；库自身不导入 Vue，默认主入口不再导出 Vue2 组件。
 
@@ -65,11 +63,6 @@ export default {
 Webpack4 不读取短子路径 exports：组件改从 `lark-doc/dist/lark-doc-vue2.common.js` 引入，样式改为 `lark-doc/dist/lark-doc.css`。组件会在销毁时释放自身编辑器；框架生命周期示例见[各环境接入](/guide/environments#env-vue2-sfc)。
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.templates` | `boolean` | `true` | 关闭后模板选择入口隐藏。 |
-| `templates` | `TemplateItem[]` | 按入口区分 | 未传或非数组时，编辑器使用 `INSERT_TEMPLATES`，工作台整文替换仍使用 `TEMPLATES`。空数组表示空模板集，初始内容回退为空段落。 |
 
 ### TemplateItem
 

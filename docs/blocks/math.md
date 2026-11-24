@@ -1,35 +1,33 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 数学公式
 
+<div class="feature-summary">
+
+## 介绍
+
 数学公式组件提供行内公式（inlineMath）与块级公式（blockMath）两种节点，语法为 LaTeX，渲染引擎为 KaTeX。KaTeX 样式与字体随包本地发布，离线可用；公式 JSON 契约始终保留，即使渲染失败也不丢内容。
 
-## 代码演示 {#demo}
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="math" />
 
-## 配置示例
+## API
 
-完整入口 `lark-doc` 会在首次渲染公式时按需加载 KaTeX，无需额外注册特性包。
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { math: true },
-  toolbarKeys: ['insert'],        // 公式入口在插入分组（别名 math / formula）
-  content: '<p>质能方程 <span data-type="inline-math" data-latex="E=mc^2"></span></p>'
-    + '<div data-type="block-math" data-latex="\\int_a^b f(x)dx"></div>',
-})
-```
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.math` | 关闭后公式入口隐藏（公式节点实际挂载时才加载 KaTeX 样式）。 | `boolean` | true / false | `true` |
+| `commands.disabled: ['setInlineMath', 'setBlockMath']` | 按命令禁用。 | `string[]` | — | `[]` |
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.math` | `boolean` | `true` | 关闭后公式入口隐藏（公式节点实际挂载时才加载 KaTeX 样式）。 |
-| `commands.disabled: ['setInlineMath', 'setBlockMath']` | `string[]` | `[]` | 按命令禁用。 |
 
 ### 使用方式
 
