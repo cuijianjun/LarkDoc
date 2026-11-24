@@ -36,7 +36,9 @@ export function createHttpIdentityProvider(options = {}) {
   const remaining = () => Math.floor(Math.min(leaseWall - Date.now(), leaseMono - monotonic()))
   function state() {
     expire()
-    return Object.freeze({ status, principalId, canCreate: false, refreshAfterMs, expiresInMs: status === 'authenticated' ? Math.max(0, remaining()) : 0,
+    // 续租在途时租约按 1ms 报，别报 0：session 的 `_applyIdentity` 用 `expiresInMs > 0`
+    // 判定 authenticated，报 0 等于自己把身份降级、能力清空，正好撞上上面那条例外。
+    return Object.freeze({ status, principalId, canCreate: false, refreshAfterMs, expiresInMs: status === 'authenticated' ? Math.max(refreshing ? 1 : 0, remaining()) : 0,
       code, operationId, generation, requiresLogin, operations: Object.freeze(Array.from(operations.values(), value => Object.freeze({ ...value }))) })
   }
   const notify = () => { const value = state(), currentEpoch = epoch; listeners.forEach(listener => { if (currentEpoch !== epoch) return; try { listener(value) } catch (_) { /* One consumer cannot prevent another from denying access. */ } }) }
@@ -48,6 +50,12 @@ export function createHttpIdentityProvider(options = {}) {
     notify()
   }
   function expire() {
+    // 续租在途时不能自毁：`clear()` 会 `controllers.abort()` 掐掉那个正在飞的
+    // `/sessions/current`，再 `epoch++` 让回来的 200 被 guard 丢掉。本地合成租约只有
+    // 3 秒（expiresInMs=3000 / refreshAfterMs=1000），主线程被协作握手或图表渲染占住
+    // 一次就撞上，于是每轮都变成 unknown → authenticating → 401 → 重新登录。
+    // 让这一枪先跑完：成功就续上，失败由 `execute` 自己 clear（`send` 有 15s abort 兜底）。
+    if (refreshing) return
     if (leaseWall && (remaining() <= 0 || Date.now() < leaseStarted)) { requiresLogin = true; if (status === 'authenticated') clear('unknown', 'IDENTITY_UNKNOWN') }
   }
   const guard = value => { expire(); if (disposed || value !== epoch) throw fail('IDENTITY_CONTEXT_CHANGED', operationId) }
