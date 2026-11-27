@@ -28,6 +28,24 @@ afterEach(() => {
 })
 
 describe('图表渲染器加载隔离', () => {
+  it('旧流程图模板丢失换行后仍送出完整语句，其他源码原样交给 Mermaid', async () => {
+    const renderer = runtime('bundled')
+    disposers.push(registerFeature('mermaid', () => renderer))
+    const lines = [
+      'graph TD',
+      'A[始] --> B{条件判断}',
+      'B -->|是| C[通过 审核]',
+      'B -->|否| D[流程二]',
+      'C --> E[结束]',
+      'D --> E',
+    ]
+    const formatted = lines.join('\n  ')
+    const singleLine = lines.join(' ')
+    const otherSource = singleLine + ' F --> G'
+    for (const source of [singleLine, formatted, otherSource]) await renderDiagram(source)
+    expect(renderer.render.mock.calls.map(([, source]) => source)).toEqual([formatted, formatted, otherSource])
+  })
+
   it('不完整的宿主全局对象不能阻止已注册的渲染器加载', async () => {
     window.mermaid = { initialize: vi.fn() }
     const renderer = runtime('bundled')

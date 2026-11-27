@@ -18,6 +18,16 @@ import { loadFeature } from './features/registry'
 
 const DIAGRAM_LANGUAGES = Object.freeze(['mermaid'])
 
+// 旧版内置流程图没有分号。只为这个已知结构恢复丢失的行分隔，保留用户保存的源码。
+const FLATTENED_FLOWCHART_TEMPLATE = new RegExp([
+  /^(graph TD)/.source,
+  /(A\[[^\]\r\n;]+\] --> B\{[^}\r\n;]+\})/.source,
+  /(B -->\|[^|\r\n;]+\| C\[[^\]\r\n;]+\])/.source,
+  /(B -->\|[^|\r\n;]+\| D\[[^\]\r\n;]+\])/.source,
+  /(C --> E\[[^\]\r\n;]+\])/.source,
+  /(D --> E)$/.source,
+].join('[ \\t]+'))
+
 const rendererPromises = new Map()
 
 function isMermaidRuntime(value) {
@@ -241,8 +251,9 @@ function loadRenderer(scriptUrl, theme) {
 export function renderDiagram(source, options = {}) {
   const id = 'lark-doc-diagram-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
   const theme = options.theme || readContentTheme()
+  const renderSource = String(source || '').replace(FLATTENED_FLOWCHART_TEMPLATE, '$1\n  $2\n  $3\n  $4\n  $5\n  $6')
   return loadRenderer(options.scriptUrl, theme)
-    .then((mermaid) => mermaid.render(id, String(source || '')))
+    .then((mermaid) => mermaid.render(id, renderSource))
     .then((result) => {
       const svg = result && result.svg
       if (!svg) throw new Error('empty svg')

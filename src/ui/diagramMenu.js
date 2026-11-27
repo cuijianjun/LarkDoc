@@ -58,7 +58,7 @@ export function createDiagramMenu({ host, handlers = {} }) {
 
 /** Example source is needed only after a user chooses a diagram. */
 export const DIAGRAM_SOURCES = {
-  "flowchart": "graph TD\n  A[开始] --> B{条件判断}\n  B -->|是| C[流程一]\n  B -->|否| D[流程二]\n  C --> E[结束]\n  D --> E",
+  "flowchart": "graph TD;\n  A[开始] --> B{条件判断};\n  B -->|是| C[流程一];\n  B -->|否| D[流程二];\n  C --> E[结束];\n  D --> E;",
   "sequence": "sequenceDiagram\n  participant U as 用户\n  participant S as 服务端\n  U->>S: 发起请求\n  S-->>U: 返回响应",
   "gantt": "gantt\n  title 项目计划\n  section 阶段一\n  需求评审 :a1, 2026-01-01, 3d\n  开发实现 :a2, after a1, 5d\n  section 阶段二\n  测试验收 :a3, after a2, 4d",
   "pie": "pie title 数据占比\n  \"类别 A\" : 40\n  \"类别 B\" : 35\n  \"类别 C\" : 25",
